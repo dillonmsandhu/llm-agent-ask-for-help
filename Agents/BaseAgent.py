@@ -6,6 +6,6 @@ class Agent(ABC):
         self.llm = llm
     
     @abstractmethod
-    def joint_policy(self, obs: str) -> str:
+    def joint_policy(self, obs = None) -> str:
         "Use the LLM to return either an action or quit given an observation"
         pass

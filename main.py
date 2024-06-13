@@ -1,7 +1,7 @@
 import LLM
 import argparse
 from datetime import datetime
-from Agents.ReAct import ReAct
+from Agents.ReAct import ReAct, ChatReAct
 import Env
 from Evaluator import Evaluator
 import utils
@@ -11,7 +11,7 @@ parser.add_argument("--llm", type=str, default="llama-2-70b-chat", choices = LLM
 parser.add_argument("--agent", type=str, default="ReAct", choices = LLM.all_llms, help="LLM agent wrapper to use")
 parser.add_argument("--env", type=str, default="AlfWorld", choices = ['Alfworld'], help="Environment")
 parser.add_argument("--N", type=int, default=1)
-parser.add_argument("--exp-name", type=str, default="small", help="name of the experiment")
+parser.add_argument("--exp-name", type=str, default="base", help="name of the experiment")
 parser.add_argument("--quit-ends-game", action="store_true", help="Should quitting end the game or be considered an invalid action?")
 parser.add_argument("--quit-hint", action = 'store_true')
 
@@ -31,7 +31,10 @@ def set_up_alfworld_agent(agent, llm):
     llm = LLM.get_llm(llm)
 
     if agent == 'ReAct':
-        prompt_file = './Alfworld/prompts/alfworld_3prompts.json'
+        if not llm.chat:
+            prompt_file = './Alfworld/prompts/alfworld_3prompts.json'
+        if llm.chat:
+            prompt_file = './Alfworld/prompts/alfword_3chat_prompts.json'
         
         TASK_TYPES = {
         'pick_and_place': 'put',
@@ -41,8 +44,11 @@ def set_up_alfworld_agent(agent, llm):
         'look_at_obj': 'examine',
         'pick_two_obj': 'puttwo'
         } 
-        
-        return ReAct(llm, TASK_TYPES, prompt_file)
+
+        if llm.chat: # set in LLM.get_llm()
+            return ChatReAct(llm, TASK_TYPES, prompt_file)
+        else:
+            return ReAct(llm, TASK_TYPES, prompt_file)
     else:
         raise NotImplementedError
 
@@ -50,22 +56,21 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     RUN_ID = args.exp_name + '_' + args.llm + '_' + args.agent
-    stored_run = initialize_logging(RUN_ID, args)
+    quit_hint = ''
 
     if args.env == 'AlfWorld':
         agent = set_up_alfworld_agent(args.agent, args.llm)
         env = Env.set_up_alfworld_env(args.exp_name + '_config.yaml')
+        args.N = len(env.gamefiles)
+        env = Env.QuitEnv(env) if args.quit_ends_game else Env.ReActEnv(env)
     else: 
         raise NotImplementedError
     
-    if args.quit_ends_game:
-        env = Env.QuitEnv(env)
-        if args.quit_hint:
-            quit_hint = 'If you believe you will fail the task, you can say "think: quit". Do not quit unless you are confident you cannot complete the task.'
-        else: 
-            quit_hint = ''
+    if args.quit_hint:
+        quit_hint = 'If you believe you will fail the task, you can say "think: quit". Do not quit unless you are confident you cannot complete the task.'
     
     # Evaluate on N runs, storing results in `stored_run`
+    stored_run = initialize_logging(RUN_ID, args)
     evaluator = Evaluator(agent, env, args.N, stored_run) 
     n_evaluated = evaluator(quit_hint, to_print = False)
     if n_evaluated == 0:

@@ -17,11 +17,26 @@ class EnvWrapper():
     def __init__(self, env):
         self.env = env
 
-    def step(self):
-        return self.env.step()
+    def step(self, action: str):
+        obs, reward, done, info = self.env.step([action]) # note there is support to play multiple games at once.
+        obs, reward, done = obs[0], info['won'][0], done[0]
+        return obs, reward, done, info
     
     def reset(self):
-        return self.env.reset()
+        obs, info = self.env.reset()
+        return obs[0], info
+    
+class ReActEnv(EnvWrapper):
+    "Wraps the Alfworld environment for ReAct"
+    def __init__(self, env):
+        super(ReActEnv, self).__init__(env)
+
+    def step(self, action: str):
+        obs, reward, done, info = self.env.step([action]) # note there is support to play multiple games at once.
+        obs, reward, done = obs[0], info['won'][0], done[0]
+        if action.startswith('think:'):
+            obs = 'OK.'
+        return obs, reward, done, info
 
 class QuitEnv(EnvWrapper):
     "Ends the episode if the agent quits."
@@ -37,7 +52,3 @@ class QuitEnv(EnvWrapper):
             reward = 0
             obs = 'Quit action recieved, ending task...'
         return obs, reward, done, info
-    
-    def reset(self):
-        obs, info = self.env.reset()
-        return obs[0], info

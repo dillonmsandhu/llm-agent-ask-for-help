@@ -1,5 +1,7 @@
 import sys
 from Agents.BaseAgent import Agent
+import time
+from utils import exponential_backoff
 
 class Evaluator():
     
@@ -10,14 +12,14 @@ class Evaluator():
         self.stored_run = stored_run
     
     def __call__(self, quit_hint = '', to_print=False):
-        "Evaluates the agent in the environment."        
+        "Evaluates the agent in the environment. Returns the number of episodes successfully run."        
         for n in range(self.num_eps):
-            if n == 1 or n % 100: print(f"Running epsiode {n}")
+            # if n == 0 or n % 100 == 0: 
+            print(f"Running epsiode {n}")
             try:        
-                r, t = self.play_alfworld(quit_hint, to_print = to_print)
-            except:
-                assert self.play_alfworld(quit_hint, to_print = to_print) == 'error'
-                print('error running episode ', n)
+                self.play_alfworld(quit_hint, to_print = to_print)
+            except Exception as e:
+                print(f'error {e} running episode {n}: breaking evaluation loop')
                 break
         return n
             
@@ -27,8 +29,7 @@ class Evaluator():
         name = '/'.join(info['extra.gamefile'][0].split('/')[-3:-1])
         return name
 
-    def play_alfworld(self, quit_hint='', to_print=False, max_steps=25):
-        # TODO: Probably this belongs with env
+    def play_alfworld(self, quit_hint='', to_print=False, max_steps=25):# TODO: Probably this belongs with env
         "Plays a game of alfworld, storing as a row in the stored_run dict."
         
         history = ''
@@ -38,8 +39,8 @@ class Evaluator():
         history += obs
         name = self.get_task_name(info)
         
-        self.agent.generate_context(name, quit_hint) # generate few-shot examples based on task name.
-        self.agent.update_context(obs) # add the initial observation     
+        self.agent.generate_context(name, obs, quit_hint) # generate few-shot examples based on task name.
+        # self.agent.update_context(obs) # add the initial observation     
         
         self.stored_run['task_name'].append(name)
         self.stored_run['task_type'].append(self.agent.task_type)
@@ -49,15 +50,17 @@ class Evaluator():
             sys.stdout.flush()
 
         for i in range(1, max_steps+1):
+            # action = exponential_backoff(self.agent.joint_policy, 3, 10, obs)
             try:
                 action = self.agent.joint_policy(obs)
             except:
-                print("Error hitting API")
-                return 'error'
+                try:
+                    time.sleep(20)
+                    action = self.agent.joint_policy(obs)
+                except:
+                    raise Exception("Error hitting API" + self.agent.joint_policy(obs))
+            # if action == None: 
             
-            if action == 'Nothing happens.':
-                print("Action taken is nothing happens")
-                exit()
             obs, reward, done, info = self.env.step(action) # note there is support to play multiple games at once.
             self.agent.update_context(obs, action) # record the observation and action in internal state.
             history += f'Act {i}: {action}\nObs {i}: {self.agent.clean_obs(obs)}\n'
